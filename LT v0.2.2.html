@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stream Track</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #09090b; color: #e4e4e7; font-family: 'Inter', system-ui, sans-serif; }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+        .animate-fade-in { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+        /* Custom Scrollbar for the settings panel */
+        .custom-scroll::-webkit-scrollbar { width: 6px; }
+        .custom-scroll::-webkit-scrollbar-track { background: #18181b; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 3px; }
+        .custom-scroll::-webkit-scrollbar-thumb:hover { background: #52525b; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useCallback, useMemo } = React;
+
+        const useLocalStorage = (key, initialValue) => {
+            const [storedValue, setStoredValue] = useState(() => {
+                try {
+                    const item = window.localStorage.getItem(key);
+                    return item ? JSON.parse(item) : initialValue;
+                } catch (error) {
+                    return initialValue;
+                }
+            });
+            const setValue = (value) => {
+                try {
+                    const valueToStore = value instanceof Function ? value(storedValue) : value;
+                    setStoredValue(valueToStore);
+                    window.localStorage.setItem(key, JSON.stringify(valueToStore));
+                } catch (error) {}
+            };
+            return [storedValue, setValue];
+        };
+
+        const CountdownTimer = ({ targetDate }) => {
+            const calculateTimeLeft = useCallback(() => {
+                const difference = +new Date(targetDate) - +new Date();
+                if (difference <= 0) return null;
+                
+                const days = Math.floor(difference / (1000 * 60 * 60 * 24));
+                const hours = Math.floor((difference / (1000 * 60 * 60)) % 24);
+                const minutes = Math.floor((difference / 1000 / 60) % 60);
+                const seconds = Math.floor((difference / 1000) % 60);
+                
+                return { days, hours, minutes, seconds };
+            }, [targetDate]);
+
+            const [timeLeft, setTimeLeft] = useState(calculateTimeLeft());
+
+            useEffect(() => {
+                const timer = setInterval(() => {
+                    setTimeLeft(calculateTimeLeft());
+                }, 1000);
+                return () => clearInterval(timer);
+            }, [calculateTimeLeft]);
+
+            if (!timeLeft) return <span className="text-emerald-400 font-bold animate-pulse text-xs">Starting Soon</span>;
+
+            const pad = (n) => n.toString().padStart(2, '0');
+
+            return (
+                <div className="font-mono font-bold text-emerald-400 text-xs tracking-wider">
+                    {timeLeft.days > 0 && <span className="mr-1">{pad(timeLeft.days)}<span className="text-zinc-500 mx-[1px]">:</span></span>}
+                    <span>{pad(timeLeft.hours)}<span className="text-zinc-500 mx-[1px]">:</span></span>
+                    <span>{pad(timeLeft.minutes)}<span className="text-zinc-500 mx-[1px]">:</span></span>
+                    <span>{pad(timeLeft.seconds)}</span>
+                </div>
+            );
+        };
+
+        const VideoCard = ({ video, status }) => {
+            const getStatusColor = () => {
+                switch(status) {
+                    case 'live': return 'bg-red-600';
+                    case 'upcoming': return 'bg-emerald-600';
+                    default: return 'bg-zinc-600';
+                }
+            };
+
+            const formatTime = (dateString) => {
+                if (!dateString) return '';
+                return new Date(dateString).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+            };
+
+            const platformIcon = video.platform === 'youtube' 
+                ? <i className="fa-brands fa-youtube text-red-500"></i> 
+                : <i className="fa-brands fa-twitch text-purple-400"></i>;
+
+            let timeLabel = '';
+            if (status === 'live') timeLabel = 'LIVE NOW';
+            else if (status === 'past') timeLabel = `Ended: ${formatTime(video.endTime)}`;
+            // Upcoming is handled conditionally below
+
+            return (
+                <div className="bg-zinc-900 rounded-xl overflow-hidden shadow-lg hover:bg-zinc-800/80 hover:shadow-emerald-900/10 transition duration-300 flex flex-col h-full border border-zinc-800 group">
+                    <div className="relative aspect-video">
+                        <img 
+                            src={video.thumbnail} 
+                            alt={video.title}
+                            className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity"
+                            onError={(e) => {e.target.src = 'https://placehold.co/600x400/222/999?text=No+Thumb'}}
+                        />
+                        <div className={`absolute bottom-2 right-2 px-2 py-0.5 text-[10px] font-bold tracking-wider rounded text-white ${getStatusColor()} shadow-sm`}>
+                            {status.toUpperCase()}
+                        </div>
+                        <div className="absolute top-2 left-2 bg-black/70 px-2 py-1 rounded-md text-white text-sm backdrop-blur-sm border border-white/10">
+                            {platformIcon}
+                        </div>
+                        {video.viewers && (
+                             <div className="absolute bottom-2 left-2 bg-black/70 px-2 py-0.5 rounded text-[10px] font-medium text-white backdrop-blur-sm flex items-center gap-1 border border-white/10">
+                                <i className="fa-solid fa-user-group text-[9px]"></i> {parseInt(video.viewers).toLocaleString()}
+                            </div>
+                        )}
+                    </div>
+                    
+                    <div className="p-4 flex flex-col flex-grow">
+                        <div className="flex items-center gap-2 mb-2">
+                            {video.channelAvatar ? (
+                                <img src={video.channelAvatar} className="w-6 h-6 rounded-full border border-zinc-700"/>
+                            ) : (
+                                <div className="w-6 h-6 rounded-full bg-zinc-700"></div>
+                            )}
+                            <p className="text-xs text-zinc-400 font-medium truncate hover:text-emerald-400 transition-colors cursor-default" title={video.channelTitle}>{video.channelTitle}</p>
+                        </div>
+
+                        <h3 className="font-semibold text-sm line-clamp-2 mb-3 text-zinc-100 leading-snug group-hover:text-white transition-colors" title={video.title}>
+                            {video.title}
+                        </h3>
+                        
+                        <div className="mt-auto pt-3 border-t border-zinc-800">
+                            {status === 'upcoming' ? (
+                                <div className="flex flex-col gap-2">
+                                    <div className="flex justify-between items-center text-xs text-zinc-400">
+                                        <i className="fa-regular fa-calendar-check text-emerald-600/70 mr-2"></i>
+                                        <span className="font-medium">{formatTime(video.startTime)}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center bg-zinc-950/50 p-2 rounded border border-zinc-800/50">
+                                        <span className="text-[9px] uppercase tracking-wider text-zinc-600 font-bold">Countdown</span>
+                                        <CountdownTimer targetDate={video.startTime} />
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="flex justify-between items-center text-xs text-zinc-500 h-6">
+                                    <span>{timeLabel}</span>
+                                </div>
+                            )}
+                        </div>
+
+                        <a 
+                            href={video.url} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="mt-3 block text-center w-full py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all bg-zinc-800 text-zinc-400 hover:bg-emerald-600 hover:text-white hover:shadow-lg hover:shadow-emerald-900/20"
+                        >
+                            Watch Stream
+                        </a>
+                    </div>
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [ytKey, setYtKey] = useLocalStorage('st_yt_key', '');
+            const [twitchClientId, setTwitchClientId] = useLocalStorage('st_twitch_client', '');
+            const [twitchToken, setTwitchToken] = useLocalStorage('st_twitch_token', '');
+            const [channels, setChannels] = useLocalStorage('st_channels', []); 
+            const [videos, setVideos] = useState({ live: [], upcoming: [], past: [] });
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState(null);
+            const [newHandle, setNewHandle] = useState('');
+            const [addPlatform, setAddPlatform] = useState('youtube');
+            const [showSettings, setShowSettings] = useState(false);
+            const [refreshKey, setRefreshKey] = useState(0);
+
+            const fetchYoutubeData = async (ytChannels) => {
+                if (!ytKey || ytChannels.length === 0) return { live: [], upcoming: [], past: [] };
+
+                const playlistPromises = ytChannels.map(async (channel) => {
+                    if (!channel.uploadsId) return [];
+                    const url = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=${channel.uploadsId}&maxResults=5&key=${ytKey}`;
+                    const res = await fetch(url);
+                    const data = await res.json();
+                    return data.items || [];
+                });
+
+                const playlistsResults = await Promise.all(playlistPromises);
+                const videoIds = playlistsResults.flat().map(item => item.snippet.resourceId.videoId);
+
+                if (videoIds.length === 0) return { live: [], upcoming: [], past: [] };
+
+                const uniqueIds = [...new Set(videoIds)].slice(0, 50);
+                const detailsUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet,liveStreamingDetails&id=${uniqueIds.join(',')}&key=${ytKey}`;
+                const detailsRes = await fetch(detailsUrl);
+                const detailsData = await detailsRes.json();
+
+                const live = [], upcoming = [], past = [];
+                const now = Date.now();
+                const dayMs = 24 * 60 * 60 * 1000;
+
+                (detailsData.items || []).forEach(v => {
+                    const ls = v.liveStreamingDetails;
+                    if (!ls) return;
+
+                    const videoObj = {
+                        id: v.id,
+                        channelId: v.snippet.channelId,
+                        platform: 'youtube',
+                        title: v.snippet.title,
+                        thumbnail: v.snippet.thumbnails.medium?.url || v.snippet.thumbnails.default?.url,
+                        channelTitle: v.snippet.channelTitle,
+                        channelAvatar: ytChannels.find(c => c.id === v.snippet.channelId)?.avatar,
+                        url: `https://www.youtube.com/watch?v=${v.id}`,
+                        viewers: ls.concurrentViewers || null
+                    };
+
+                    if (ls.actualStartTime && !ls.actualEndTime) {
+                        live.push({ ...videoObj, startTime: ls.actualStartTime });
+                    } else if (ls.scheduledStartTime && !ls.actualStartTime) {
+                        upcoming.push({ ...videoObj, startTime: ls.scheduledStartTime });
+                    } else if (ls.actualEndTime) {
+                        if (now - new Date(ls.actualEndTime).getTime() < dayMs) {
+                            past.push({ ...videoObj, endTime: ls.actualEndTime });
+                        }
+                    }
+                });
+
+                return { live, upcoming, past };
+            };
+
+            const fetchTwitchData = async (twChannels) => {
+                if (!twitchClientId || !twitchToken || twChannels.length === 0) return { live: [], upcoming: [], past: [] };
+
+                const headers = { 'Client-ID': twitchClientId, 'Authorization': `Bearer ${twitchToken}` };
+                const userIds = twChannels.map(c => c.id);
+                const live = [], upcoming = [], past = [];
+
+                const streamsQuery = userIds.map(id => `user_id=${id}`).join('&');
+                const streamsRes = await fetch(`https://api.twitch.tv/helix/streams?${streamsQuery}`, { headers });
+                
+                if (streamsRes.status === 401) throw new Error("Twitch Token Expired/Invalid");
+                
+                const streamsData = await streamsRes.json();
+
+                (streamsData.data || []).forEach(s => {
+                    const channel = twChannels.find(c => c.id === s.user_id);
+                    live.push({
+                        id: s.id,
+                        channelId: s.user_id,
+                        platform: 'twitch',
+                        title: s.title,
+                        thumbnail: s.thumbnail_url.replace('{width}', '640').replace('{height}', '360'),
+                        channelTitle: s.user_name,
+                        channelAvatar: channel?.avatar,
+                        url: `https://twitch.tv/${s.user_login}`,
+                        startTime: s.started_at,
+                        viewers: s.viewer_count
+                    });
+                });
+
+                await Promise.all(twChannels.map(async (channel) => {
+                    const videosRes = await fetch(`https://api.twitch.tv/helix/videos?user_id=${channel.id}&first=5&type=archive`, { headers });
+                    const videosData = await videosRes.json();
+                    const now = Date.now();
+                    const dayMs = 24 * 60 * 60 * 1000;
+
+                    (videosData.data || []).forEach(v => {
+                        const created = new Date(v.created_at).getTime();
+                        if (now - created < dayMs) {
+                            past.push({
+                                id: v.id,
+                                channelId: channel.id,
+                                platform: 'twitch',
+                                title: v.title,
+                                thumbnail: v.thumbnail_url.replace('%{width}', '640').replace('%{height}', '360'),
+                                channelTitle: v.user_name,
+                                channelAvatar: channel.avatar,
+                                url: v.url,
+                                endTime: v.created_at
+                            });
+                        }
+                    });
+
+                    try {
+                        const schedRes = await fetch(`https://api.twitch.tv/helix/schedule?broadcaster_id=${channel.id}&first=3`, { headers });
+                        if (schedRes.ok) {
+                            const schedData = await schedRes.json();
+                            if (schedData.data && schedData.data.segments) {
+                                schedData.data.segments.forEach(seg => {
+                                    if (new Date(seg.start_time) > new Date()) {
+                                         upcoming.push({
+                                            id: seg.id,
+                                            channelId: channel.id,
+                                            platform: 'twitch',
+                                            title: seg.title || "Scheduled Stream",
+                                            thumbnail: 'https://placehold.co/640x360/9146FF/FFF?text=Upcoming',
+                                            channelTitle: channel.title,
+                                            channelAvatar: channel.avatar,
+                                            url: `https://twitch.tv/${channel.handle}`,
+                                            startTime: seg.start_time
+                                        });
+                                    }
+                                });
+                            }
+                        }
+                    } catch (e) { }
+                }));
+
+                return { live, upcoming, past };
+            };
+
+            const fetchAll = useCallback(async () => {
+                setLoading(true);
+                setError(null);
+
+                const ytChannels = channels.filter(c => c.platform === 'youtube');
+                const twChannels = channels.filter(c => c.platform === 'twitch');
+
+                try {
+                    const [ytData, twData] = await Promise.all([
+                        fetchYoutubeData(ytChannels).catch(e => { console.error(e); return {live:[], upcoming:[], past:[]} }),
+                        fetchTwitchData(twChannels).catch(e => { console.error(e); return {live:[], upcoming:[], past:[]} })
+                    ]);
+
+                    const mergedLive = [...ytData.live, ...twData.live].sort((a,b) => b.viewers - a.viewers);
+                    const mergedUpcoming = [...ytData.upcoming, ...twData.upcoming].sort((a,b) => new Date(a.startTime) - new Date(b.startTime));
+                    const mergedPast = [...ytData.past, ...twData.past].sort((a,b) => new Date(b.endTime || b.startTime) - new Date(a.endTime || a.startTime));
+
+                    setVideos({ live: mergedLive, upcoming: mergedUpcoming, past: mergedPast });
+
+                } catch (err) {
+                    setError("Error fetching data. Check console/keys.");
+                } finally {
+                    setLoading(false);
+                }
+            }, [channels, ytKey, twitchClientId, twitchToken]);
+
+            useEffect(() => {
+                fetchAll();
+            }, [refreshKey, channels, ytKey, twitchToken]);
+
+            const addChannel = async (e) => {
+                e.preventDefault();
+                if (!newHandle) return;
+                setLoading(true);
+                setError(null);
+
+                try {
+                    let newChannel = null;
+
+                    if (addPlatform === 'youtube') {
+                        if (!ytKey) throw new Error("YouTube Key missing");
+                        const handle = newHandle.startsWith('@') ? newHandle : `@${newHandle}`;
+                        const url = `https://www.googleapis.com/youtube/v3/channels?part=snippet,contentDetails&forHandle=${handle}&key=${ytKey}`;
+                        const res = await fetch(url);
+                        const data = await res.json();
+                        if (!data.items?.length) throw new Error("YT Channel not found");
+                        const item = data.items[0];
+                        newChannel = {
+                            platform: 'youtube',
+                            handle: handle,
+                            id: item.id,
+                            uploadsId: item.contentDetails.relatedPlaylists.uploads,
+                            title: item.snippet.title,
+                            avatar: item.snippet.thumbnails.default.url
+                        };
+                    } else {
+                        if (!twitchClientId || !twitchToken) throw new Error("Twitch Credentials missing");
+                        const handle = newHandle.replace('@', '').trim();
+                        const headers = { 'Client-ID': twitchClientId, 'Authorization': `Bearer ${twitchToken}` };
+                        const res = await fetch(`https://api.twitch.tv/helix/users?login=${handle}`, { headers });
+                        const data = await res.json();
+                        if (!data.data?.length) throw new Error("Twitch User not found");
+                        const user = data.data[0];
+                        newChannel = {
+                            platform: 'twitch',
+                            handle: user.login,
+                            id: user.id,
+                            title: user.display_name,
+                            avatar: user.profile_image_url
+                        };
+                    }
+
+                    if (channels.some(c => c.id === newChannel.id)) throw new Error("Channel already added");
+
+                    setChannels(prev => [...prev, newChannel]);
+                    setNewHandle('');
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const removeChannel = (id) => {
+                setChannels(prev => prev.filter(c => c.id !== id));
+                setVideos(prev => ({
+                    live: prev.live.filter(v => v.channelId !== id),
+                    upcoming: prev.upcoming.filter(v => v.channelId !== id),
+                    past: prev.past.filter(v => v.channelId !== id)
+                }));
+            };
+
+            return (
+                <div className="min-h-screen flex flex-col bg-zinc-950 text-zinc-100 font-sans">
+                    {/* Header */}
+                    <header className="bg-zinc-950/80 backdrop-blur-md border-b border-zinc-800 p-4 sticky top-0 z-50">
+                        <div className="max-w-7xl mx-auto flex justify-between items-center">
+                            <div className="flex items-center gap-3">
+                                <div className="bg-gradient-to-br from-emerald-500 to-teal-700 w-8 h-8 rounded-lg flex items-center justify-center shadow-lg shadow-emerald-900/30">
+                                    <i className="fa-solid fa-satellite-dish text-white text-sm"></i>
+                                </div>
+                                <h1 className="text-lg font-bold tracking-tight text-zinc-100">Stream<span className="text-emerald-500">Track</span></h1>
+                            </div>
+                            <div className="flex gap-3">
+                                <button 
+                                    onClick={() => setRefreshKey(k=>k+1)} 
+                                    className="w-8 h-8 flex items-center justify-center rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition"
+                                    title="Refresh"
+                                >
+                                    <i className={`fa-solid fa-rotate-right ${loading ? 'animate-spin' : ''}`}></i>
+                                </button>
+                                <button 
+                                    onClick={() => setShowSettings(!showSettings)} 
+                                    className={`px-4 py-1.5 rounded-lg text-sm font-medium transition flex items-center gap-2 ${showSettings ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/40' : 'bg-zinc-900 text-zinc-300 border border-zinc-800 hover:bg-zinc-800 hover:text-white'}`}
+                                >
+                                    <i className="fa-solid fa-sliders"></i>
+                                    <span className="hidden sm:inline">Configure</span>
+                                </button>
+                            </div>
+                        </div>
+                    </header>
+
+                    {/* Settings Panel */}
+                    {showSettings && (
+                        <div className="bg-zinc-900/95 backdrop-blur border-b border-zinc-800 p-6 animate-fade-in shadow-2xl">
+                            <div className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-10">
+                                <div className="space-y-5">
+                                    <div className="flex items-center gap-2 text-emerald-500 border-b border-zinc-800 pb-2">
+                                        <i className="fa-solid fa-key"></i>
+                                        <h3 className="font-bold text-sm uppercase tracking-wider">API Access</h3>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider mb-1 block">YouTube API Key</label>
+                                        <div className="relative">
+                                            <i className="fa-brands fa-youtube absolute left-3 top-2.5 text-zinc-500"></i>
+                                            <input type="password" value={ytKey} onChange={e=>setYtKey(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg pl-9 pr-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all placeholder-zinc-700" placeholder="AIzaSy..." />
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider mb-1 block">Twitch Client ID</label>
+                                            <div className="relative">
+                                                <i className="fa-solid fa-id-badge absolute left-3 top-2.5 text-zinc-500"></i>
+                                                <input type="password" value={twitchClientId} onChange={e=>setTwitchClientId(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg pl-9 pr-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all placeholder-zinc-700" />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider mb-1 block">Access Token</label>
+                                            <div className="relative">
+                                                <i className="fa-solid fa-lock absolute left-3 top-2.5 text-zinc-500"></i>
+                                                <input type="password" value={twitchToken} onChange={e=>setTwitchToken(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg pl-9 pr-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all placeholder-zinc-700" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <p className="text-xs text-zinc-600 italic">Credentials are stored securely in your browser's local storage.</p>
+                                </div>
+
+                                <div className="space-y-5">
+                                    <div className="flex items-center gap-2 text-emerald-500 border-b border-zinc-800 pb-2">
+                                        <i className="fa-solid fa-list-ul"></i>
+                                        <h3 className="font-bold text-sm uppercase tracking-wider">Tracking List</h3>
+                                    </div>
+                                    
+                                    <form onSubmit={addChannel} className="flex gap-2">
+                                        <div className="relative">
+                                            <select value={addPlatform} onChange={e=>setAddPlatform(e.target.value)} className="appearance-none bg-zinc-950 border border-zinc-800 text-zinc-300 text-sm rounded-lg pl-3 pr-8 py-2 focus:outline-none focus:border-emerald-500 cursor-pointer">
+                                                <option value="youtube">YouTube</option>
+                                                <option value="twitch">Twitch</option>
+                                            </select>
+                                            <i className="fa-solid fa-chevron-down absolute right-3 top-3 text-xs text-zinc-600 pointer-events-none"></i>
+                                        </div>
+                                        <input type="text" value={newHandle} onChange={e=>setNewHandle(e.target.value)} placeholder={addPlatform === 'youtube' ? "@channel_handle" : "twitch_username"} className="flex-grow bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-200 text-sm focus:outline-none focus:border-emerald-500 transition-all placeholder-zinc-700" />
+                                        <button type="submit" disabled={loading} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 rounded-lg text-sm font-bold shadow-lg shadow-emerald-900/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                                            <i className="fa-solid fa-plus"></i>
+                                        </button>
+                                    </form>
+                                    
+                                    {error && <div className="text-red-400 text-xs bg-red-950/30 border border-red-900/50 p-3 rounded-lg flex items-center gap-2"><i className="fa-solid fa-triangle-exclamation"></i> {error}</div>}
+
+                                    <div className="h-48 overflow-y-auto pr-2 space-y-2 custom-scroll bg-zinc-950/30 p-2 rounded-lg border border-zinc-800/50">
+                                        {channels.map(c => (
+                                            <div key={c.id + c.platform} className="flex justify-between items-center bg-zinc-900 p-2 rounded-lg border border-zinc-800 group hover:border-zinc-700 transition-colors">
+                                                <div className="flex items-center gap-3 overflow-hidden">
+                                                    <div className={`w-1 h-8 rounded-full ${c.platform === 'youtube' ? 'bg-red-500' : 'bg-purple-500'}`}></div>
+                                                    <img src={c.avatar} className="w-8 h-8 rounded-full bg-zinc-800 object-cover" />
+                                                    <div className="flex flex-col">
+                                                        <span className="text-sm font-medium text-zinc-200 truncate">{c.title}</span>
+                                                        <span className="text-[10px] text-zinc-500 uppercase tracking-wider">{c.platform}</span>
+                                                    </div>
+                                                </div>
+                                                <button onClick={() => removeChannel(c.id)} className="text-zinc-600 hover:text-red-400 p-2 opacity-0 group-hover:opacity-100 transition-all"><i className="fa-solid fa-trash-can"></i></button>
+                                            </div>
+                                        ))}
+                                        {channels.length === 0 && <div className="text-center text-zinc-600 text-sm py-10 italic">No channels added yet.</div>}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Main Content */}
+                    <main className="flex-grow p-4 md:p-8 max-w-7xl mx-auto w-full space-y-16">
+                        {(!ytKey && !twitchToken) ? (
+                             <div className="text-center py-24 opacity-60 flex flex-col items-center animate-fade-in">
+                                <div className="bg-zinc-900 p-6 rounded-full mb-6 border border-zinc-800 shadow-2xl">
+                                    <i className="fa-solid fa-sliders text-4xl text-emerald-500"></i>
+                                </div>
+                                <h2 className="text-3xl font-bold text-white mb-2">Setup Required</h2>
+                                <p className="text-zinc-400 mb-8 max-w-md mx-auto">Please configure your API keys in the settings menu to start tracking your favorite streams.</p>
+                                <button onClick={() => setShowSettings(true)} className="bg-emerald-600 text-white px-8 py-3 rounded-full font-bold hover:bg-emerald-500 transition shadow-lg shadow-emerald-900/40">Open Configuration</button>
+                            </div>
+                        ) : (
+                            <>
+                                {/* Live Section */}
+                                <section>
+                                    <div className="flex items-center justify-between mb-6 border-b border-zinc-800/50 pb-4">
+                                        <div className="flex items-center gap-3">
+                                            <span className="relative flex h-3 w-3">
+                                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                              <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                                            </span>
+                                            <h2 className="text-xl font-bold text-zinc-100 tracking-wide">Live Now</h2>
+                                        </div>
+                                        <span className="bg-zinc-900 border border-zinc-800 text-zinc-400 text-xs px-3 py-1 rounded-full font-mono">{videos.live.length}</span>
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                                        {videos.live.map(v => <VideoCard key={v.id} video={v} status="live" />)}
+                                        {videos.live.length === 0 && (
+                                            <div className="col-span-full h-40 flex items-center justify-center border-2 border-dashed border-zinc-800 rounded-xl bg-zinc-900/20 text-zinc-600">
+                                                <div className="text-center">
+                                                    <i className="fa-solid fa-video-slash mb-2 text-xl opacity-50"></i>
+                                                    <p className="text-sm">No active streams detected</p>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </section>
+
+                                {/* Upcoming Section */}
+                                <section>
+                                    <div className="flex items-center justify-between mb-6 border-b border-zinc-800/50 pb-4">
+                                        <div className="flex items-center gap-3">
+                                            <i className="fa-regular fa-calendar-check text-emerald-500"></i>
+                                            <h2 className="text-xl font-bold text-zinc-100 tracking-wide">Upcoming</h2>
+                                        </div>
+                                        <span className="bg-zinc-900 border border-zinc-800 text-zinc-400 text-xs px-3 py-1 rounded-full font-mono">{videos.upcoming.length}</span>
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                                        {videos.upcoming.map(v => <VideoCard key={v.id} video={v} status="upcoming" />)}
+                                        {videos.upcoming.length === 0 && (
+                                            <div className="col-span-full h-40 flex items-center justify-center border-2 border-dashed border-zinc-800 rounded-xl bg-zinc-900/20 text-zinc-600">
+                                                 <div className="text-center">
+                                                    <i className="fa-regular fa-calendar-xmark mb-2 text-xl opacity-50"></i>
+                                                    <p className="text-sm">Nothing scheduled soon</p>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </section>
+
+                                {/* Past Section */}
+                                <section>
+                                    <div className="flex items-center justify-between mb-6 border-b border-zinc-800/50 pb-4">
+                                        <div className="flex items-center gap-3">
+                                            <i className="fa-solid fa-clock-rotate-left text-zinc-500"></i>
+                                            <h2 className="text-xl font-bold text-zinc-100 tracking-wide">Past 24h</h2>
+                                        </div>
+                                        <span className="bg-zinc-900 border border-zinc-800 text-zinc-400 text-xs px-3 py-1 rounded-full font-mono">{videos.past.length}</span>
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                                        {videos.past.map(v => <VideoCard key={v.id} video={v} status="past" />)}
+                                        {videos.past.length === 0 && (
+                                            <div className="col-span-full h-40 flex items-center justify-center border-2 border-dashed border-zinc-800 rounded-xl bg-zinc-900/20 text-zinc-600">
+                                                 <div className="text-center">
+                                                    <i className="fa-solid fa-box-open mb-2 text-xl opacity-50"></i>
+                                                    <p className="text-sm">No VODs in the last 24h</p>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </section>
+                            </>
+                        )}
+                    </main>
+
+                    <footer className="border-t border-zinc-900 bg-zinc-950 p-8 mt-auto">
+                        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4 text-xs text-zinc-600">
+                            <span>&copy; 2026 Stream Track. Made by SM5 with help of Gemini <i className="fa-brands fa-google text-blue-900/50 hover:text-blue-600 transition"></i></span>
+                            <div className="flex gap-4">
+                                <span><i className="fa-brands fa-youtube text-red-900/50 hover:text-red-600 transition"></i> Data API v3</span>
+                                <span><i className="fa-brands fa-twitch text-purple-900/50 hover:text-purple-600 transition"></i> Helix API</span>
+                            </div>
+                        </div>
+                    </footer>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

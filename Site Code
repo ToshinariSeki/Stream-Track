@@ -610,7 +610,7 @@
 
                     <footer className="border-t border-zinc-900 bg-zinc-950 p-8 mt-auto">
                         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4 text-xs text-zinc-600">
-                            <span>&copy; 2026 Stream Track. Made by SM5 with help of Gemini <i className="fa-brands fa-google text-blue-900/50 hover:text-blue-600 transition"></i></span>
+                            <span>&copy; 2026 Stream Track. Made by TSeki with help of Gemini <i className="fa-brands fa-google text-blue-900/50 hover:text-blue-600 transition"></i></span>
                             <div className="flex gap-4">
                                 <span><i className="fa-brands fa-youtube text-red-900/50 hover:text-red-600 transition"></i> Data API v3</span>
                                 <span><i className="fa-brands fa-twitch text-purple-900/50 hover:text-purple-600 transition"></i> Helix API</span>
